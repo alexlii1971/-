@@ -1207,7 +1207,7 @@ self.addEventListener('fetch', (event) => {
   */
   ```
 ```
- 收到！继续输出补充内容：
+ 
 
 ---
 **十七、第三方依赖文档（建议补充）**
@@ -1234,5 +1234,305 @@ self.addEventListener('fetch', (event) => {
   */
   ```
 ```
+ ---
+
+**十八、支持与维护文档（建议补充）**
+
+### 1. **技术支持流程**
+```markdown
+## 问题上报分级机制
+| 优先级 | 响应时间 | 定义场景                          |
+|--------|----------|-----------------------------------|
+| P0     | 15分钟   | 支付功能完全不可用                |
+| P1     | 1小时    | 部分支付渠道失败                  |
+| P2     | 24小时   | 非核心功能异常（如日志记录失败）  |
+
+## 问题排查工具包
+```bash
+# 支付状态诊断脚本
+wp eval-file diagnose_payment.php --order_id=1001 --verbose
+```
+
+### 2. **服务等级协议（SLA）**
+```yaml
+availability: 99.95%  # 每月允许宕机时间 ≤ 21分钟
+recovery_objectives:
+  rto: 30分钟         # 故障恢复时间目标
+  rpo: 5分钟          # 数据恢复点目标
+support_hours: 
+  - "工作日 09:00-21:00 (GMT+8)"
+  - "紧急通道: 7×24 小时"
+```
+
+--- 好的，继续输出补充内容：
+
+---
+
+**十九、支付回调安全验证文档（建议补充）**
+
+### 1. **微信支付回调验证**
+```php
+class WeChatCallbackValidator {
+    public function verify($data) {
+        // 1. 验证签名
+        $sign = $data['sign'];
+        unset($data['sign']);
+        ksort($data);
+        $string = urldecode(http_build_query($data)) . "&key=" . $this->api_key;
+        $calculatedSign = strtoupper(md5($string));
+        
+        // 2. 验证商户号匹配
+        if ($data['mch_id'] !== $this->mch_id) {
+            throw new Exception("非法商户号");
+        }
+        
+        return $calculatedSign === $sign;
+    }
+}
+```
+
+### 2. **支付宝异步通知验证**
+```php
+class AliPayNotifyChecker {
+    public function check($params) {
+        // 1. 验证是否为支付宝发起的请求
+        $isFromAliPay = $this->verifySourceIP($_SERVER['REMOTE_ADDR']);
+        
+        // 2. 验证交易状态
+        $tradeStatusValid = in_array($params['trade_status'], ['TRADE_SUCCESS', 'TRADE_FINISHED']);
+        
+        // 3. 验证签名
+        $signVerified = $this->verifySignature($params);
+        
+        return $isFromAliPay && $tradeStatusValid && $signVerified;
+    }
+    
+    private function verifySourceIP($ip) {
+        $aliPayIPs = gethostbynamel('notify.alipay.com');
+        return in_array($ip, $aliPayIPs);
+    }
+}
+```
+
+---
+
+**二十、多地区合规差异文档（建议补充）**
+
+| 地区   | 特殊要求                                                                 | 实现方案                                                                 |
+|--------|--------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| 中国大陆 | • 需ICP备案<br>• 支付结果页必须显示商户名称                              | 使用`get_bloginfo('name')`动态加载商户名称                               |
+| 港澳地区 | • 需支持HKD货币<br>• 必须提供英文界面                                   | 添加多语言包<br>集成港币汇率接口                                        |
+| 东南亚   | • 需支持GrabPay等本地支付<br>• 身份证字段需兼容当地格式                  | 扩展支付网关类<br>添加自定义验证规则                                    |
+
+---
+ ---
+
+**二十一、数据分析与报表文档（建议补充）**
+
+### 1. **支付业务报表生成**
+```sql
+-- 每日支付统计视图
+CREATE VIEW daily_payment_stats AS
+SELECT 
+    DATE(created_at) AS date,
+    gateway,
+    COUNT(*) AS total_orders,
+    SUM(amount) AS total_amount,
+    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS success_count
+FROM wc_payments
+GROUP BY date, gateway;
+```
+
+### 2. **风险交易识别规则**
+```php
+class RiskDetector {
+    const RISK_PATTERNS = [
+        'high_frequency' => [
+            'condition' => 'COUNT(*) > 10 AND SUM(amount) > 10000',
+            'time_window' => '5 MINUTE'
+        ],
+        'multi_device' => [
+            'condition' => 'COUNT(DISTINCT device_id) > 3',
+            'time_window' => '1 HOUR'
+        ]
+    ];
+
+    public function scanTransactions() {
+        foreach (self::RISK_PATTERNS as $pattern) {
+            $this->checkPattern($pattern);
+        }
+    }
+}
+```
+
+---
+
+**二十二、插件更新策略文档（建议补充）**
+
+### 1. **灰度发布方案**
+```mermaid
+graph TD
+    A[发布v2.1版本] --> B{按站点ID分流}
+    B -->|ID末位≤2| C[首批升级]
+    B -->|其他站点| D[观察24小时]
+    C --> E{错误率<1%?}
+    E -->|是| F[全量发布]
+    E -->|否| G[回滚并排查]
+```
+
+### 2. **热修复流程**
+```markdown
+1. 创建紧急修复分支 `hotfix/payment-timeout`
+2. 通过WP-CLI推送补丁：
+   ```bash
+   wp plugin update multisite-payment --path=/var/www/html --version=2.0.1-patch1
+   ```
+3. 验证修复效果后合并到主分支
+```
+
+---
+---
+
+**二十三、多租户资源隔离方案（建议补充）**
+
+### 1. **数据库分片策略**
+```php
+class ShardingManager {
+    const SHARD_MAP = [
+        'blog_1' => 'payment_db_1',
+        'blog_2' => 'payment_db_2',
+        // ...其他站点映射
+    ];
+
+    public function getShardConnection($blog_id) {
+        $shard_key = 'blog_' . $blog_id;
+        return new wpdb(DB_USER, DB_PASSWORD, self::SHARD_MAP[$shard_key], DB_HOST);
+    }
+}
+
+// 支付数据写入分片数据库
+add_action('wc_payment_processed', function($payment_data) {
+    $shard_db = (new ShardingManager())->getShardConnection($payment_data['blog_id']);
+    $shard_db->insert('payments', $payment_data);
+});
+```
+
+### 2. **资源配额管理**
+```yaml
+# Kubernetes资源限制示例
+resources:
+  limits:
+    cpu: "2"
+    memory: 4Gi
+  requests:
+    cpu: "0.5"
+    memory: 1Gi
+annotations:
+  "quotas.payment/request-limit": "1000/5m" # 每5分钟1000次请求
+```
+
+---
+
+**二十四、支付链路压测报告模板（建议补充）**
+
+### 1. **JMeter测试计划配置**
+```xml
+<!-- 微信支付接口压测配置 -->
+<ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="微信支付压测">
+  <intProp name="ThreadGroup.num_threads">500</intProp>
+  <intProp name="ThreadGroup.ramp_time">60</intProp>
+  <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+</ThreadGroup>
+
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="支付请求">
+  <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+    <collectionProp name="Arguments.arguments">
+      <elementProp name="amount" elementType="HTTPArgument">
+        <stringProp name="Argument.value">100</stringProp>
+      </elementProp>
+    </collectionProp>
+  </elementProp>
+  <stringProp name="HTTPSampler.domain">api.pay.example.com</stringProp>
+  <stringProp name="HTTPSampler.path">/v3/pay/transactions/jsapi</stringProp>
+</HTTPSamplerProxy>
+```
+
+### 2. **压测结果指标**
+```markdown
+| 场景            | TPS  | 平均响应时间 | 错误率 | 资源消耗       |
+|-----------------|------|--------------|--------|----------------|
+| 纯支付接口      | 1200 | 230ms        | 0.05%  | CPU 75%, 内存6G|
+| 支付+订单查询   | 800  | 410ms        | 0.12%  | CPU 85%, 内存8G|
+| 峰值压力（3倍） | 3600 | 920ms        | 2.3%   | CPU 98%, 内存9G|
+```
+
+---
+
+**二十五、用户行为分析埋点规范（建议补充）**
+
+### 1. **前端埋点示例**
+```javascript
+// 支付按钮点击追踪
+document.querySelector('.payment-button').addEventListener('click', function() {
+    window.dataLayer.push({
+        'event': 'payment_initiated',
+        'payment_method': 'wechat',
+        'order_amount': getOrderTotal()
+    });
+});
+
+// 支付成功事件
+wp.hooks.addAction('payment_complete', 'wcTracking', function(orderData) {
+    analytics.track('Payment Completed', {
+        currency: orderData.currency,
+        coupon_used: orderData.coupon !== null
+    });
+});
+```
+
+### 2. **埋点数据格式**
+```json
+{
+  "event_time": "2023-08-20T14:35:00Z",
+  "event_type": "payment_failed",
+  "properties": {
+    "error_code": "WX_1001",
+    "retry_count": 2,
+    "device_type": "mobile",
+    "browser": "Chrome/115.0"
+  },
+  "user": {
+    "id": "hash_9a8b7c6d",
+    "geo": "CN-310000"
+  }
+}
+```
+
+---
+
+**二十六、法律免责声明模板（建议补充）**
+
+```markdown
+# 免责条款
+
+## 第三方支付责任
+本插件仅作为支付渠道的技术接入方，不对以下情况负责：
+1. 支付平台资金清算延迟
+2. 用户操作失误导致的重复支付
+3. 因违反支付平台规则导致的账户封禁
+
+## 数据安全声明
+用户需自行确保：
+- 妥善保管API密钥和证书文件
+- 定期更换加密盐值（建议周期≤90天）
+- 及时更新安全补丁（漏洞修复响应时间≤72小时）
+
+## 服务中断补偿
+因不可抗力导致的服务中断，补偿方案为：
+- 故障时间＜1小时：延长1天服务期
+- 故障时间≥4小时：延长7天服务期
+```
+
+---
  
- 
+
