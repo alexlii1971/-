@@ -20,7 +20,7 @@
 ## 8.关于编码规则：
 最大程度上遵循wordpress、woocommerce的API规则、惯例与实践，以免造成不兼容。
 
-```markdown
+
 # WooCommerce微信支付宝多站点支付插件开发规范（优化版）
 
 ## 一、项目概述
