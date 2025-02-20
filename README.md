@@ -206,4 +206,326 @@ $container->register(AliPay::class);
 6. 补充完整测试方案
 7. 规范文档体系结构
 
-是否需要针对某个具体模块进行更详细的说明？
+# 输出开发前文档说明（第一部分）：
+
+---
+
+### 一、详细设计文档（1/3）
+
+#### 1. 支付流程时序图
+```mermaid
+sequenceDiagram
+    用户->>+插件: 发起支付请求
+    插件->>+微信API: 创建预支付订单
+    微信API-->>-插件: 返回预支付ID
+    插件->>+前端: 生成支付参数
+    前端->>+微信客户端: 调起支付
+    微信客户端-->>-前端: 支付结果
+    前端->>+插件: 提交支付结果
+    插件->>+数据库: 更新订单状态
+```
+
+#### 2. 多站点配置架构
+```php
+// 配置继承逻辑示例
+function get_site_config($blog_id, $key) {
+    $site_config = get_blog_option($blog_id, $key);
+    if(empty($site_config)) {
+        return get_network_option(null, $key);
+    }
+    return $site_config;
+}
+```
+### 一、详细设计文档（2/3）
+
+#### 3. 模块依赖关系图
+```mermaid
+graph TD
+    A[支付网关抽象层] --> B(微信支付适配器)
+    A --> C(支付宝支付适配器)
+    D[交易服务层] --> A
+    E[配置管理] --> D
+    F[日志系统] -->|写入| G[(数据库)]
+    B -->|调用| H[微信官方SDK]
+    C -->|调用| I[支付宝官方SDK]
+```
+
+#### 4. 数据库ER图核心设计
+```sql
+CREATE TABLE wc_payments (
+    payment_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    blog_id INT NOT NULL,
+    order_id VARCHAR(32) NOT NULL,
+    gateway ENUM('wechat','alipay') NOT NULL,
+    amount DECIMAL(15,2) UNSIGNED NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'CNY',
+    status ENUM('pending','completed','refunded','failed') NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX blog_gateway_idx (blog_id, gateway)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+### 一、详细设计文档（3/3）
+
+#### 5. 安全设计规范
+```php
+// 密钥加密存储实现
+class KeyManager {
+    const CIPHER_METHOD = 'aes-256-cbc';
+    
+    public function encrypt($plaintext) {
+        $iv = substr(SECURE_AUTH_SALT, 0, 16);
+        return openssl_encrypt(
+            $plaintext,
+            self::CIPHER_METHOD,
+            SECURE_AUTH_KEY,
+            0,
+            $iv
+        );
+    }
+
+    public function decrypt($ciphertext) {
+        $iv = substr(SECURE_AUTH_SALT, 0, 16);
+        return openssl_decrypt(
+            $ciphertext,
+            self::CIPHER_METHOD,
+            SECURE_AUTH_KEY,
+            0,
+            $iv
+        );
+    }
+}
+```
+
+#### 6. 防重放攻击方案
+```mermaid
+graph LR
+    A[请求到达] --> B{Nonce校验}
+    B -->|存在缓存| C[拒绝请求]
+    B -->|未存在| D{时间戳校验}
+    D -->|超时| E[拒绝请求]
+    D -->|有效| F[处理请求]
+    F --> G[缓存Nonce]
+```
+
+### 二、接口规范文档（1/4）
+
+#### 1. 微信支付API对接规范
+```php
+interface WeChatPayInterface {
+    /**
+     * 统一下单接口
+     * @param array $order_data 订单数据
+     * @return array 预支付结果
+     * @throws PaymentException
+     */
+    public function unifiedOrder(array $order_data): array;
+
+    /**
+     * 订单查询接口
+     * @param string $out_trade_no 商户订单号
+     * @return array 订单状态
+     */
+    public function orderQuery(string $out_trade_no): array;
+}
+```
+
+#### 2. 微信支付状态码映射表
+| 微信状态码 | 插件状态码 | 含义                | 处理建议               |
+|------------|------------|---------------------|-----------------------|
+| SUCCESS    | 1000       | 支付成功            | 更新订单状态          |
+| REFUND     | 2001       | 转入退款            | 触发退款流程          |
+| NOTPAY     | 3002       | 未支付              | 保持待支付状态        |
+| PAYERROR   | 4003       | 支付失败            | 记录错误日志          |
+
+### 二、接口规范文档（2/4）
+
+#### 3. 支付宝接口安全规范
+```php
+// 支付宝签名验证核心逻辑
+class AliPaySecurity {
+    public function verifySignature($params) {
+        $sign = $params['sign'];
+        unset($params['sign'], $params['sign_type']);
+        ksort($params);
+        $data = urldecode(http_build_query($params));
+        $pubKey = openssl_pkey_get_public($this->getPublicKey());
+        return openssl_verify($data, base64_decode($sign), $pubKey, OPENSSL_ALGO_SHA256);
+    }
+}
+```
+
+#### 4. 支付宝异步通知处理
+```mermaid
+sequenceDiagram
+    支付宝服务器->>插件接口: POST支付通知
+    插件接口->>验签模块: 验证签名
+    验签模块-->>插件接口: 验签结果
+    插件接口->>订单系统: 更新订单状态
+    订单系统-->>插件接口: 操作结果
+    插件接口->>支付宝服务器: 返回SUCCESS/FAIL
+```
+### 二、接口规范文档（3/4）
+
+#### 5. WordPress钩子清单
+```php
+// 支付流程钩子示例
+add_action('wc_multipay_before_payment', function($order_id, $gateway) {
+    // 支付前校验逻辑
+}, 10, 2);
+
+add_filter('wc_multipay_payment_args', function($args, $order) {
+    // 修改支付请求参数
+    return $args;
+}, 10, 2);
+```
+
+#### 6. 核心钩子定义表
+| 钩子名称                   | 触发时机                | 参数                          | 典型用途                     |
+|---------------------------|-------------------------|-------------------------------|----------------------------|
+| wc_multipay_payment_init  | 支付初始化时            | $order_id, $gateway           | 添加自定义校验逻辑          |
+| wc_multipay_logging       | 日志记录前              | $log_data, $log_level         | 日志内容增强/过滤           |
+| wc_multipay_async_notify  | 收到异步通知时          | $request_data                 | 自定义通知处理流程          |
+| wc_multipay_refund        | 发起退款前              | $refund_amount, $order        | 退款条件校验                |
+
+### 二、接口规范文档（4/4）
+
+#### 7. 日志系统API规范
+```php
+interface LoggerInterface {
+    /**
+     * 记录支付日志
+     * @param string $level 日志级别
+     * @param string $message 日志信息
+     * @param array $context 上下文数据
+     */
+    public function log($level, $message, array $context = []);
+    
+    /**
+     * 获取指定条件的日志
+     * @param array $filter 过滤条件
+     * @return array 日志条目集合
+     */
+    public function getLogs(array $filter = []);
+}
+```
+
+#### 8. 错误代码定义
+```json
+{
+  "ERROR_CODE": {
+    "1001": "网络连接异常",
+    "2003": "签名验证失败",
+    "3005": "支付超时",
+    "4002": "余额不足",
+    "5009": "系统配置错误"
+  },
+  "RECOVERY_ACTION": {
+    "1001": "检查网络设置",
+    "2003": "重新生成密钥",
+    "3005": "重新发起支付",
+    "4002": "更换支付方式",
+    "5009": "联系系统管理员"
+  }
+}
+```
+
+---
+
+
+### 三、安全设计文档（1/3）
+
+#### 1. 敏感信息加密方案
+```mermaid
+graph TB
+    A[原始密钥] --> B{AES-256加密}
+    B -->|使用WP盐值| C[加密存储]
+    D[访问请求] --> E{权限验证}
+    E -->|通过| F[动态解密]
+    E -->|拒绝| G[记录安全事件]
+```
+
+#### 2. 密钥生命周期管理
+| 阶段       | 处理方式                  | 审计要求              |
+|------------|--------------------------|-----------------------|
+| 生成       | 使用OpenSSL生成真随机数   | 记录生成时间/操作员   |
+| 存储       | 加密后分片存储            | 每月完整性校验        |
+| 使用       | 内存中动态解密            | 记录使用时间戳        |
+| 轮换       | 90天自动轮换              | 保留旧密钥30天        |
+| 销毁       | 多次覆写存储区域          | 双人见证销毁过程      |
+
+### 三、安全设计文档（2/3）
+
+#### 3. CSRF/XSS防护体系
+```php
+// CSRF Token生成与验证
+class CSRF_Protector {
+    public function generateToken() {
+        return bin2hex(random_bytes(32));
+    }
+
+    public function validateToken($token) {
+        $stored_token = WC()->session->get('csrf_token');
+        return hash_equals($stored_token, $token);
+    }
+}
+
+// XSS过滤示例
+add_filter('wc_multipay_sanitize_input', function($input) {
+    return wp_kses($input, [
+        'div' => ['class' => []],
+        'span' => ['data-*' => true],
+        'input' => ['type' => [], 'name' => [], 'value' => []]
+    ]);
+});
+```
+
+#### 4. 交易防重放机制
+```mermaid
+sequenceDiagram
+    客户端->>服务端: 请求支付(nonce=abc123)
+    服务端->>缓存: 检查nonce存在?
+    缓存-->>服务端: 不存在
+    服务端->>缓存: 存储nonce(有效期10分钟)
+    服务端->>客户端: 返回成功
+    攻击者->>服务端: 重放请求(nonce=abc123)
+    服务端->>缓存: 检查nonce存在?
+    缓存-->>服务端: 已存在
+    服务端->>攻击者: 拒绝请求
+```
+### 三、安全设计文档（3/3）
+
+#### 5. 异常交易监控规则
+```mermaid
+graph TD
+    A[交易请求] --> B{触发规则}
+    B -->|单笔超限| C[人工审核]
+    B -->|高频请求| D[临时封禁]
+    B -->|异地登录| E[二次验证]
+    B -->|设备变更| F[短信验证]
+    C --> G[记录审计日志]
+    D --> G
+    E --> G
+    F --> G
+```
+
+#### 6. 密钥轮换策略
+```php
+// 自动轮换逻辑示例
+class KeyRotator {
+    public function rotateKeys() {
+        $new_key = $this->generateKey();
+        $encrypted = $this->encryptKey($new_key);
+        
+        // 多站点轮换处理
+        foreach (get_sites() as $site) {
+            switch_to_blog($site->blog_id);
+            update_option('current_key', $encrypted);
+            update_option('previous_key', get_option('current_key'));
+            restore_current_blog();
+        }
+    }
+}
+```
+
+---
+
