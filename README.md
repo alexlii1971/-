@@ -593,7 +593,7 @@ graph TB
 ### 四、测试验证文档（3/3）
 
 #### 5. 移动端真机测试清单
-```markdown
+
 - **测试设备覆盖**：
   - iOS阵营：
     - iPhone 15 Pro (iOS 17)
@@ -639,7 +639,7 @@ $ curl -H "Content-Type: application/json" \
 ```
 
 #### 7. 测试报告模板
-```markdown
+
 # 支付插件测试报告
 
 ## 测试概况
