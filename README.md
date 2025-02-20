@@ -1,4 +1,4 @@
-# -
+# wordpress multisite woocommerce微信支付、支付宝支付插件
 请生成woocommerce微信支付宝支付插件，要求如下：
 1.支持wordpress multisite;
 2.微信支付符合以下场景：
