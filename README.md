@@ -3,6 +3,10 @@
 ## 1.支持wordpress multisite与woocommerce;
 ###（1）检查最新版本wordpress；
 ###（2）检查最新版本woocommerce；
+## 2.插件在wordpress中的使用与功能管理
+由于是wordpress multisite环境，插件有两种激活方式；
+###（1）插件在wordpress mulsite的network 
+
 ## 2.微信支付符合以下场景：
 ###（1）手机网页端、唤醒手机微信支付；
 ###（2）电脑端扫码支付；
