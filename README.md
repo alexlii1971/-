@@ -5,7 +5,7 @@
 ###（2）检查最新版本woocommerce；
 ## 二.插件在wordpress中的使用与功能管理
 
-由于是wordpress multisite环境，插件有是否在wordpress multisite的network中全站激活，两种情况；
+由于是wordpress multisite环境，插件有是否在wordpress multisite的network中全站激活的两种情况；
 
 ###1.插件不在wordpress multisite的network中网络全站激活，而允许在子站点中单独激活：
 各站点自主配置所有涉及到的配置变量与参数，包括但不限于需要配置商户信息、SDK上传、证书上传、相关app iD 与seceret、回调地址填写等所有变量及所有可能需要配置的参数；因此，这种情况下，各子站点提供插件的所有有关管理界面。
